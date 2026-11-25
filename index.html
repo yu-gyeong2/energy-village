@@ -138,6 +138,11 @@ button{border-width:2px}
 .primary{box-shadow:0 3px 0 color-mix(in srgb,var(--accent) 60%,#000 0%)}
 .camctl button{background:#FFF8E6;color:#5A4430;border-color:#D9C49A}
 header h1{letter-spacing:.01em}
+.team{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:10px;padding:8px 12px;border:2px dashed var(--line);border-radius:14px;background:var(--surface)}
+.team b{font-family:var(--display);font-weight:400;font-size:17px;color:var(--accent)}
+.team input{font:inherit;width:9em;padding:5px 10px;border-radius:999px;border:2px solid var(--line);background:#fff;color:#222}
+.team .on{background:var(--accent);color:#fff;border-color:var(--accent)}
+.team small{color:var(--muted)}
 </style>
 </head>
 <body>
@@ -145,6 +150,12 @@ header h1{letter-spacing:.01em}
   <header>
     <h1>우리 마을 에너지 시뮬레이터 3D</h1>
     <p>우리 모둠 지역의 실제 기상 자료로 3D 마을에 발전소를 짓고, 집 50채에 불이 몇 채나 들어오는지 확인해요.</p>
+    <div class="team" id="team">
+      <b>👥 모둠 함께 하기</b>
+      <input id="roomCode" maxlength="20" placeholder="모둠 코드 (예: 3반2모둠)" aria-label="모둠 코드">
+      <button id="roomBtn">함께 하기</button>
+      <small id="roomMsg">모둠원 모두 같은 코드를 넣으면 한 화면처럼 같이 바뀌어요.</small>
+    </div>
   </header>
 
   <section class="card intro" id="intro" aria-labelledby="s1">
@@ -273,6 +284,7 @@ const SCEN=[
   {id:'calm',label:'🌙 바람 없는 밤',s:0,w:0.1,note:'가장 힘든 순간이에요. 태양광도 풍력도 거의 멈춰요.'}];
 const st={region:null,sun:null,wind:null,rain:null,items:[],scen:'year'};
 let nid=1;
+const newId=()=>Date.now()*1000+Math.floor(Math.random()*1000);
 const $=id=>document.getElementById(id);
 const Z=id=>ZONES.find(z=>z.id===id);
 
@@ -558,14 +570,14 @@ function init3D(){
     const z=p.zone,err=check(t,z,movingId);
     if(err){say(err,'bad');render();return;}
     const data={z:z.id,x:p.mx,y:p.my,h:p.h,slot:p.slot};
-    if(movingId)Object.assign(st.items.find(i=>i.id===movingId),data);else st.items.push(Object.assign({id:nid++,t},data));
+    if(movingId)Object.assign(st.items.find(i=>i.id===movingId),data);else st.items.push(Object.assign({id:newId(),t},data));
     let extra='';
     if(t==='wind'&&z.wm>1)extra=` 바람이 ${z.wm}배 세게 불어요!`;
     else if(t==='hydro')extra=' 흐르는 물의 힘으로 밤낮없이 전기를 만들어요.';
     else if(t==='tide')extra=' 밀물·썰물의 힘으로 날씨와 상관없이 전기를 만들어요.';
     say(`${z.name.split(' (')[0]}에 ${OBJ[t]} 지었어요.${extra}`,'good');render();
   }
-  T3.startDrag=startDrag;
+  T3.startDrag=startDrag;T3.dragging=()=>!!drag;
 
   // 캔버스: 발전소를 잡으면 옮기기, 빈 곳이면 돌리기, 두 손가락이면 확대
   const ptrs=new Map();let pinch=0;
@@ -636,7 +648,7 @@ function init(){
     $('introMsg').textContent=m;$('introMsg').className='msg '+(ok?'good':'');$('nextBtn').disabled=!ok;return ok;};
   $('region').onchange=e=>{st.region=+e.target.value;const r=REGIONS[st.region];
     $('coastTag').textContent=r.coast?'🌊 바다와 맞닿은 지역 → 조력 발전소를 지을 수 있어요':'⛰ 바다가 없는 내륙 지역 → 수력 발전소를 지을 수 있어요';
-    $('rainBox').hidden=r.coast;$('tideBox').hidden=!r.coast;$('tideTxt').textContent=r.tide||'';validate();};
+    $('rainBox').hidden=r.coast;$('tideBox').hidden=!r.coast;$('tideTxt').textContent=r.tide||'';validate();share();};
   $('sun').oninput=validate;$('wind').oninput=validate;$('rain').oninput=validate;
   $('nextBtn').onclick=()=>{if(!validate())return;const R=REGIONS[st.region];
     st.sun=parseFloat($('sun').value);st.wind=parseFloat($('wind').value);st.rain=R.coast?null:parseFloat($('rain').value);
@@ -656,8 +668,71 @@ function init(){
     $('stage').insertAdjacentHTML('beforeend','<div class="nomsg"><p>이 기기에서는 3D 화면을 열 수 없어요.<br>다른 기기나 크롬 브라우저로 다시 열어 보고, 안 되면 선생님께 알려 주세요.</p></div>');
   }
   validate();
+  $('roomBtn').onclick=()=>joinRoom($('roomCode').value);
+  $('roomCode').onkeydown=e=>{if(e.key==='Enter')joinRoom($('roomCode').value);};
+  if(!FB_CONFIG.databaseURL)teamMsg('선생님이 함께 하기를 켜면 모둠원끼리 같은 마을을 같이 꾸밀 수 있어요.');
+  try{const m=new URL(location.href).searchParams.get('m');if(m){$('roomCode').value=m;joinRoom(m);}}catch(_){}
 }
-function render(){
+function render(){draw();if(!TEAM.applying)share();
+  if(TEAM.pending&&!(T3.dragging&&T3.dragging())){TEAM.pending=false;TEAM.ref&&TEAM.ref.once('value',x=>applyRemote(x.val()));}}
+
+/* ===== 모둠 실시간 공동 편집 (Firebase Realtime Database) =====
+   선생님: Firebase 콘솔의 웹 앱 설정값 중 apiKey와 databaseURL을 아래에 붙여 넣으세요. */
+const FB_CONFIG={apiKey:"",databaseURL:""};
+const TEAM={ref:null,applying:false,pending:false,synced:{},meta:'',first:true};
+function loadJS(src){return new Promise((ok,no)=>{const e=document.createElement('script');e.src=src;e.onload=ok;e.onerror=no;document.head.appendChild(e);});}
+function teamMsg(t,good){$('roomMsg').textContent=t;$('roomMsg').style.color=good?'var(--good)':'';}
+async function joinRoom(raw){
+  const code=(raw||'').trim().replace(/[.#$\[\]\/\s]/g,'');
+  if(!code){teamMsg('모둠 코드를 넣어 주세요.');return;}
+  if(!FB_CONFIG.databaseURL){teamMsg('아직 선생님이 함께 하기를 켜지 않았어요. 혼자서는 그대로 쓸 수 있어요.');return;}
+  try{
+    if(!window.firebase){teamMsg('연결하는 중…');
+      await loadJS('https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js');
+      await loadJS('https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js');
+      firebase.initializeApp(FB_CONFIG);}
+  }catch(e){teamMsg('인터넷 연결을 확인하고 다시 눌러 주세요.');return;}
+  const db=firebase.database();
+  if(TEAM.ref){TEAM.ref.off();TEAM.who&&TEAM.who.remove();TEAM.whoAll&&TEAM.whoAll.off();}
+  const room=db.ref('rooms/'+code);
+  TEAM.ref=room.child('data');TEAM.synced={};TEAM.meta='';TEAM.first=true;
+  TEAM.whoAll=room.child('who');TEAM.who=TEAM.whoAll.push(true);TEAM.who.onDisconnect().remove();
+  TEAM.whoAll.on('value',x=>{const n=Object.keys(x.val()||{}).length;teamMsg(`「${code}」 모둠과 연결됐어요 · 지금 ${n}명 함께 접속`,true);});
+  TEAM.ref.on('value',x=>{const v=x.val();
+    if(TEAM.first){TEAM.first=false;if(!v){share();return;}}
+    if(v)applyRemote(v);},()=>teamMsg('연결이 막혔어요. 선생님께 알려 주세요.'));
+  $('roomCode').value=code;$('roomBtn').textContent='연결됨';$('roomBtn').classList.add('on');
+  try{const u=new URL(location.href);u.searchParams.set('m',code);history.replaceState(null,'',u);}catch(_){}
+}
+function share(){
+  if(!TEAM.ref||TEAM.applying||TEAM.first)return;
+  const up={},cur={};
+  st.items.forEach(i=>{cur['i'+i.id]=JSON.stringify(i);});
+  for(const k in cur)if(TEAM.synced[k]!==cur[k])up['items/'+k]=JSON.parse(cur[k]);
+  for(const k in TEAM.synced)if(!(k in cur))up['items/'+k]=null;
+  const m={region:st.region,sun:st.sun,wind:st.wind,rain:st.rain,scen:st.scen},mj=JSON.stringify(m);
+  if(mj!==TEAM.meta){up.meta=m;TEAM.meta=mj;}
+  TEAM.synced=cur;
+  if(Object.keys(up).length)TEAM.ref.update(up);
+}
+function applyRemote(v){
+  if(T3.dragging&&T3.dragging()){TEAM.pending=true;return;}
+  TEAM.applying=true;
+  try{
+    const items=Object.values(v.items||{}).sort((a,b)=>a.id-b.id);
+    st.items=items;TEAM.synced={};items.forEach(i=>{TEAM.synced['i'+i.id]=JSON.stringify(i);});
+    const m=v.meta||{},mj=JSON.stringify({region:m.region??null,sun:m.sun??null,wind:m.wind??null,rain:m.rain??null,scen:m.scen||'year'});
+    if(mj!==TEAM.meta){TEAM.meta=mj;
+      if(m.region!=null&&m.region!==st.region){$('region').value=m.region;$('region').onchange({target:$('region')});}
+      st.scen=m.scen||'year';
+      if(m.sun!=null){st.sun=m.sun;st.wind=m.wind;st.rain=m.rain??null;
+        $('sun').value=m.sun;$('wind').value=m.wind;$('rain').value=m.rain??'';
+        if(!$('intro').hidden){$('intro').hidden=true;$('main').hidden=false;}}
+    }
+    if(st.region!==null&&st.sun!==null)render();
+  }finally{TEAM.applying=false;}
+}
+function draw(){
   if(st.region===null)return;
   const R=REGIONS[st.region];
   $('iRegion').textContent=R.n;$('iSun').textContent=st.sun;$('iWind').textContent=st.wind;
