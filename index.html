@@ -85,6 +85,12 @@ button:disabled{opacity:.4;cursor:not-allowed}
 .cmp .row.me{font-weight:700}
 .cmp .n{text-align:right;font-variant-numeric:tabular-nums}
 .copybox{width:100%;min-height:130px;font:inherit;font-size:13px;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px;resize:vertical}
+.saves{list-style:none;margin:8px 0 0;padding:0;display:grid;gap:6px}
+.saves li{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 10px;border:1px solid var(--line);border-radius:10px;background:var(--bg);font-size:14px}
+.saves li b{font-weight:700}.saves li small{color:var(--muted)}.saves li span{flex:1;min-width:10em}
+.saves li button{padding:3px 10px;font-size:13px}
+.saverow{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:12px}
+.saverow input{font:inherit;flex:1;min-width:8em;padding:5px 10px;border-radius:999px;border:2px solid var(--line);background:#fff;color:#222}
 .row-end{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap}
 details{margin-top:16px}
 details summary{cursor:pointer;color:var(--muted);font-size:14px}
@@ -235,9 +241,12 @@ header h1{letter-spacing:.01em}
       </section>
 
       <section class="card" aria-labelledby="s5">
-        <div class="step"><b>기록</b><h2 id="s5">결과를 활동판에 붙이기</h2></div>
+        <div class="step"><b>기록</b><h2 id="s5">결과 붙이기 · 설계 저장</h2></div>
         <textarea class="copybox" id="summary" readonly aria-label="결과 요약"></textarea>
         <div class="row-end"><span class="hint" id="copyMsg" style="margin:0">복사해서 캔바 활동판에 붙여 넣으세요.</span><button id="copyBtn">결과 복사하기</button></div>
+        <div class="saverow"><input id="saveName" maxlength="20" placeholder="기록 이름 (예: 1차 설계)" aria-label="기록 이름"><button id="saveBtn">💾 지금 설계 저장</button></div>
+        <p class="hint" id="saveMsg" style="margin:6px 0 0">여러 번 바꿔 보면서 저장해 두면, 나중에 비교하거나 다시 불러올 수 있어요.</p>
+        <ul class="saves" id="saves"></ul>
       </section>
     </div>
   </div>
@@ -668,6 +677,7 @@ function init(){
     $('stage').insertAdjacentHTML('beforeend','<div class="nomsg"><p>이 기기에서는 3D 화면을 열 수 없어요.<br>다른 기기나 크롬 브라우저로 다시 열어 보고, 안 되면 선생님께 알려 주세요.</p></div>');
   }
   validate();
+  $('saveBtn').onclick=saveNow;$('saveName').onkeydown=e=>{if(e.key==='Enter')saveNow();};showSaves(localSaves());
   $('roomBtn').onclick=()=>joinRoom($('roomCode').value);
   $('roomCode').onkeydown=e=>{if(e.key==='Enter')joinRoom($('roomCode').value);};
   if(!FB_CONFIG.databaseURL)teamMsg('선생님이 함께 하기를 켜면 모둠원끼리 같은 마을을 같이 꾸밀 수 있어요.');
@@ -695,7 +705,9 @@ async function joinRoom(raw){
   const db=firebase.database();
   if(TEAM.ref){TEAM.ref.off();TEAM.who&&TEAM.who.remove();TEAM.whoAll&&TEAM.whoAll.off();}
   const room=db.ref('rooms/'+code);
-  TEAM.ref=room.child('data');TEAM.synced={};TEAM.meta='';TEAM.first=true;
+  if(TEAM.room)TEAM.room.child('saves').off();
+  TEAM.room=room;TEAM.ref=room.child('data');
+  room.child('saves').on('value',x=>showSaves(x.val()));TEAM.synced={};TEAM.meta='';TEAM.first=true;
   TEAM.whoAll=room.child('who');TEAM.who=TEAM.whoAll.push(true);TEAM.who.onDisconnect().remove();
   TEAM.whoAll.on('value',x=>{const n=Object.keys(x.val()||{}).length;teamMsg(`「${code}」 모둠과 연결됐어요 · 지금 ${n}명 함께 접속`,true);});
   TEAM.ref.on('value',x=>{const v=x.val();
@@ -704,6 +716,38 @@ async function joinRoom(raw){
   $('roomCode').value=code;$('roomBtn').textContent='연결됨';$('roomBtn').classList.add('on');
   try{const u=new URL(location.href);u.searchParams.set('m',code);history.replaceState(null,'',u);}catch(_){}
 }
+/* ===== 설계 기록 저장: 모둠 연결 중이면 모둠 기록(Firebase), 아니면 이 기기에 저장 ===== */
+let SAVEINFO='',SAVES={};
+const LKEY='energyVillageSaves';
+function localSaves(){try{return JSON.parse(localStorage.getItem(LKEY)||'{}');}catch(_){return {};}}
+function setLocalSaves(o){try{localStorage.setItem(LKEY,JSON.stringify(o));}catch(_){}}
+function showSaves(o){SAVES=o||{};const ul=$('saves');ul.innerHTML='';
+  const arr=Object.entries(SAVES).sort((a,b)=>a[1].time-b[1].time);
+  if(!arr.length){ul.innerHTML='<li><small>아직 저장한 기록이 없어요.</small></li>';return;}
+  arr.forEach(([k,v],i)=>{const d=new Date(v.time),tm=`${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+    const li=document.createElement('li');
+    li.innerHTML=`<span><b></b> <small></small><br><small></small></span><button data-a="load">불러오기</button><button data-a="del">지우기</button>`;
+    li.querySelector('b').textContent=v.name||`기록 ${i+1}`;li.querySelectorAll('small')[0].textContent=tm;li.querySelectorAll('small')[1].textContent=v.info||'';
+    li.querySelector('[data-a=load]').onclick=()=>loadSave(v);
+    li.querySelector('[data-a=del]').onclick=()=>{if(!confirmDel(v))return;if(TEAM.room)TEAM.room.child('saves/'+k).remove();else{const o=localSaves();delete o[k];setLocalSaves(o);showSaves(o);}};
+    ul.appendChild(li);});}
+function confirmDel(v){return window.confirm(`「${v.name||'기록'}」을 지울까요?`);}
+function saveNow(){
+  if(st.region===null||st.sun===null){$('saveMsg').textContent='먼저 지역과 기상 자료를 넣고 발전소를 지어 보세요.';return;}
+  const n=Object.keys(SAVES).length+1;
+  const v={name:($('saveName').value.trim()||`${n}차 설계`).slice(0,20),time:Date.now(),info:SAVEINFO,summary:$('summary').value,
+    meta:{region:st.region,sun:st.sun,wind:st.wind,rain:st.rain,scen:st.scen},items:JSON.parse(JSON.stringify(st.items))};
+  if(TEAM.room){TEAM.room.child('saves').push(v);$('saveMsg').textContent=`「${v.name}」을 모둠 기록에 저장했어요. 모둠원 모두 볼 수 있어요.`;}
+  else{const o=localSaves();o['s'+v.time]=v;setLocalSaves(o);showSaves(o);$('saveMsg').textContent=`「${v.name}」을 이 기기에 저장했어요. (모둠 함께 하기를 켜면 모둠 기록으로 저장돼요)`;}
+  $('saveName').value='';}
+function loadSave(v){const m=v.meta||{};
+  if(!window.confirm(`「${v.name}」을 불러올까요? 지금 마을은 이 기록으로 바뀌어요.`))return;
+  if(m.region!=null&&m.region!==st.region){$('region').value=m.region;$('region').onchange({target:$('region')});}
+  st.sun=m.sun;st.wind=m.wind;st.rain=m.rain??null;st.scen=m.scen||'year';
+  $('sun').value=m.sun;$('wind').value=m.wind;$('rain').value=m.rain??'';
+  st.items=JSON.parse(JSON.stringify(Object.values(v.items||{})));
+  $('intro').hidden=true;$('main').hidden=false;render();
+  $('saveMsg').textContent=`「${v.name}」을 불러왔어요.`;}
 function share(){
   if(!TEAM.ref||TEAM.applying||TEAM.first)return;
   const up={},cur={};
@@ -771,6 +815,7 @@ function draw(){
   const list=Object.entries(cnt).map(([k,v])=>`${k} ${v}`).join(', ')||'없음';
   const extra=R.coast?`바다: ${R.tide}`:`강수량 ${st.rain} mm/년`;
   const pc=x=>tot?Math.round(x/tot*100):0;
+  SAVEINFO=`${R.n} · 집 ${yearH}/50채 · ${fmt(used)}억 원`;
   $('summary').value=`[우리 마을 에너지 시뮬레이션]\n지역: ${R.n} (일조 ${st.sun} hr/년, 풍속 ${st.wind} m/s, ${extra})\n설치: ${list} (사용한 돈 ${fmt(used)}억/${BUDGET}억 원)\n발전 비율: 태양광 ${pc(r.sKWh)}% · 풍력 ${pc(r.wKWh)}% · 수력 ${pc(r.hKWh)}% · 조력 ${pc(r.tKWh)}%\n1년 발전량: ${(tot/1000).toFixed(1)} MWh → 집 ${yearH}/50채 (자급률 ${Math.round(tot/need*100)}%)\n밤에 불 켜진 집: ${nightH}/50채 · 바람 없는 밤: ${calmH}/50채\n줄인 이산화탄소: ${(tot/1000*0.46).toFixed(1)}톤/년`;
   // 3D 장면에 반영
   if(T3.ok){T3.sync();T3.apply({lit,sky:SKY[st.scen],windF:sc.w===null?1:sc.w,R,
