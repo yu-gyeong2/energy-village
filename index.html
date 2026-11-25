@@ -678,7 +678,7 @@ function render(){draw();if(!TEAM.applying)share();
 
 /* ===== 모둠 실시간 공동 편집 (Firebase Realtime Database) =====
    선생님: Firebase 콘솔의 웹 앱 설정값 중 apiKey와 databaseURL을 아래에 붙여 넣으세요. */
-const FB_CONFIG={apiKey:"",databaseURL:""};
+const FB_CONFIG={projectId:"energy-village-71eab",databaseURL:"https://energy-village-71eab-default-rtdb.asia-southeast1.firebasedatabase.app"};
 const TEAM={ref:null,applying:false,pending:false,synced:{},meta:'',first:true};
 function loadJS(src){return new Promise((ok,no)=>{const e=document.createElement('script');e.src=src;e.onload=ok;e.onerror=no;document.head.appendChild(e);});}
 function teamMsg(t,good){$('roomMsg').textContent=t;$('roomMsg').style.color=good?'var(--good)':'';}
